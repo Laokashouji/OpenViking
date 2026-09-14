@@ -35,7 +35,6 @@ from openviking.prompts import render_prompt
 from openviking.server.identity import RequestContext, Role
 from openviking.service.task_work_index import detach_task_context
 from openviking.storage.abstract_overview import (
-    AbstractOverviewFormatError,
     AbstractOverviewWriteResult,
     body_for_preview,
     deterministic_sample,
@@ -655,8 +654,6 @@ class SemanticProcessor(DequeueHandlerBase):
                     logger.info(
                         f"Parsed {len(existing_summaries)} existing summaries from overview.md"
                     )
-            except AbstractOverviewFormatError:
-                raise
             except Exception as e:
                 logger.debug(f"No existing overview.md found for {dir_uri}: {e}")
 
@@ -772,6 +769,8 @@ class SemanticProcessor(DequeueHandlerBase):
                 total_entries=len(file_paths),
                 sampled_entries=len(sampled_summaries),
             )
+        except LockAcquisitionError:
+            raise
         except Exception as e:
             raise RuntimeError(f"Failed to write abstract/overview for {dir_uri}: {e}") from e
         if not wrote_semantics.wrote:
@@ -1143,6 +1142,8 @@ class SemanticProcessor(DequeueHandlerBase):
         in_header = True
 
         for line in lines:
+            if line.strip() == "---":
+                continue
             if in_header and line.startswith("#"):
                 continue
             elif in_header and line.strip():

@@ -741,6 +741,8 @@ def test_context_collection_uses_acl_mode_and_excludes_parent_uri():
     assert "acl_enabled" not in schema["ScalarIndex"]
     assert "parent_uri" not in field_names
     assert "parent_uri" not in schema["ScalarIndex"]
+    assert "acl_restricted" not in field_names
+    assert "acl_restricted" not in schema["ScalarIndex"]
 
 
 def test_context_collection_signature_has_no_include_parent_uri():
@@ -902,10 +904,11 @@ def test_private_vikingdb_client_wraps_connection_error(monkeypatch):
         del kwargs
         raise requests.ConnectionError("connection refused")
 
-    monkeypatch.setattr(requests, "request", _raise_connection_error)
+    client = VikingDBClient("https://vikingdb.example.com")
+    monkeypatch.setattr(client._session, "request", _raise_connection_error)
 
     with pytest.raises(ConnectionError, match="connection refused") as exc_info:
-        VikingDBClient("https://vikingdb.example.com").do_req(
+        client.do_req(
             "POST",
             "/api/vikingdb/data/upsert",
             req_body={},

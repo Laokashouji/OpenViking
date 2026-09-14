@@ -52,12 +52,7 @@ import { TaskDetailSheet } from '#/routes/tasks/-components/task-detail-sheet'
 import { normalizeTaskStatus } from '#/routes/tasks/-lib/task-record'
 import type { TaskRecord } from '#/routes/tasks/-lib/task-record'
 import { formatTaskDuration, getTaskDate } from '#/routes/tasks/-lib/task-time'
-import {
-  fetchTasks,
-  fetchTaskSummary,
-  getEffectiveTaskStatus,
-  MAX_TASKS,
-} from './-lib/task-list'
+import { fetchTasks, fetchTaskSummary, MAX_TASKS } from './-lib/task-list'
 import type { TaskStatusFilter, TaskTypeFilter } from './-lib/task-list'
 import { getTaskPipelineGroups } from './-lib/task-pipeline'
 
@@ -276,9 +271,7 @@ function TasksRoute() {
 
   const renderStatus = (task: TaskRecord) => {
     const taskId = task.task_id
-    // 使用基于 8 并发算力的物理有效状态判定
-    const effStatus = getEffectiveTaskStatus(task, allTasks)
-    const status = normalizeTaskStatus(effStatus)
+    const status = normalizeTaskStatus(task.status)
     const pct = getTaskProgressPct(task)
     const isRetrying = retryMutation.isPending && retryMutation.variables.task_id === taskId
     const Icon =
@@ -308,11 +301,7 @@ function TasksRoute() {
               : 'size-3.5'
           }
         />
-        <span>
-          {status === 'pending'
-            ? (i18n.language.startsWith('zh') ? '队首等待中' : 'Queued')
-            : t(`status.${status}`)}
-        </span>
+        <span>{t(`status.${status}`)}</span>
         {status === 'running' && (
           <span className="font-mono font-semibold ml-0.5">
             {pct}%
@@ -485,9 +474,6 @@ function TasksRoute() {
 
   const kpiData = React.useMemo(() => {
     const total = allTasks.length
-    const completed = allTasks.filter(
-      (item) => normalizeTaskStatus(item.status) === 'completed',
-    ).length
     const rawRunning = allTasks.filter(
       (item) => normalizeTaskStatus(item.status) === 'running',
     ).length
@@ -498,10 +484,9 @@ function TasksRoute() {
       (item) => normalizeTaskStatus(item.status) === 'failed',
     ).length
 
-    // 物理硬件与底层并发槽位限制：Embedding 槽位上限为 8
-    const MAX_CONCURRENT_CAP = 8
-    const running = Math.min(rawRunning, MAX_CONCURRENT_CAP)
-    const pending = rawPending + Math.max(0, rawRunning - MAX_CONCURRENT_CAP)
+    // Reflect API statuses; do not invent pending from an 8-slot running cap.
+    const running = rawRunning
+    const pending = rawPending
 
     const durations = allTasks
       .map((item) => {
@@ -585,7 +570,6 @@ function TasksRoute() {
 
     return {
       total,
-      completed,
       running,
       pending,
       failed,
