@@ -356,9 +356,20 @@ async def test_list_tasks_filters_by_owner(tracker: TaskTracker):
 
 async def test_list_limit(tracker: TaskTracker):
     for i in range(10):
-        await tracker.create("session_commit", resource_id=f"s{i}", **_owner_kwargs())
+        await tracker.create(
+            "session_commit",
+            resource_id=f"s{i}",
+            meta={"nested": {"values": [i]}},
+            **_owner_kwargs(),
+        )
     tasks = await tracker.list_tasks(limit=3)
-    assert len(tasks) == 3
+    assert [task.resource_id for task in tasks] == ["s9", "s8", "s7"]
+    tasks[0].meta["nested"]["values"].append("changed")
+    await tracker.start(tasks[0].task_id)
+    current = await tracker.list_tasks(limit=1)
+    assert current[0].meta["nested"]["values"] == [9]
+    assert current[0].status == TaskStatus.RUNNING
+    assert tasks[0].status == TaskStatus.PENDING
 
 
 async def test_list_can_hide_internal_tasks_before_limit(tracker: TaskTracker):
@@ -911,6 +922,22 @@ async def test_task_summary_counts_retained_attempts_in_one_window(monkeypatch, 
         # The existing list limit and status filter remain independent.
         listing = await client.get("/api/v1/tasks?limit=200&status=completed")
         assert len(listing.json()["result"]) == 200
+        page_query = {
+            "pagination": "cursor",
+            "limit": 200,
+            "status": "completed",
+            "task_type": "session_commit",
+        }
+        page = (await client.get("/api/v1/tasks", params=page_query)).json()["result"]
+        assert len(page["items"]) == 200
+        assert page["has_more"] is True
+        next_page = (
+            await client.get("/api/v1/tasks", params={**page_query, "cursor": page["next_cursor"]})
+        ).json()["result"]
+        assert len(next_page["items"]) == 50
+        assert next_page["has_more"] is False
+        assert next_page["next_cursor"] is None
+        assert len({task["task_id"] for task in page["items"] + next_page["items"]}) == 250
         unfiltered = await client.get("/api/v1/tasks/summary")
         assert unfiltered.json()["result"]["failed"] == 3
         empty = await client.get("/api/v1/tasks/summary?task_type=add_skill")

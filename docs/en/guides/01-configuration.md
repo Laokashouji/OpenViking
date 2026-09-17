@@ -118,12 +118,14 @@ Use `openviking-server init` to complete the Codex login/import step, then run `
   },
   "vlm": {
     "provider" : "openai-codex",
-    "model"    : "gpt-5.4",
+    "model"    : "gpt-5.6-terra",
     "api_base" : "https://chatgpt.com/backend-api/codex",
     "reasoning_effort": "xhigh"
   }
 }
 ```
+
+OpenAI [retired `gpt-5.4` from Codex with ChatGPT sign-in](https://learn.chatgpt.com/docs/models#deprecated-codex-models) on August 31, 2026. For an existing setup, change `vlm.model` in `ov.conf` to `gpt-5.6-terra` and restart the server; upgrading OpenViking does not rewrite saved model settings. This retirement does not affect `provider: "openai"` with an API key.
 
 </details>
 
@@ -213,7 +215,7 @@ Embedding model configuration for vector search, supporting dense, sparse, and h
 |-----------|------|-------------|
 | `max_concurrent` | int | Maximum concurrent embedding requests (`embedding.max_concurrent`, default: `10`; must be `>= 1`) |
 | `max_retries` | int | Maximum retry attempts for transient embedding provider errors (`embedding.max_retries`, default: `3`; `0` disables retry) |
-| `text_source` | str | Text used for vectorizing text files. `content_only` reads raw content, `summary_first` uses summary when available and falls back to content, `summary_only` uses only summary. Default: `content_only` |
+| `text_source` | str | Text used for vectorizing text files. `content_only` reads raw content, `summary_first` uses summary when available and falls back to content, `summary_only` is a deprecated alias for `summary_first`; existing configurations still load, log a warning, and normalize to `summary_first`. Default: `content_only` |
 | `max_input_tokens` | int | Maximum estimated raw text tokens sent to the embedding model when content is used. Default: `4096` |
 | `provider` | str | `"openai"`, `"azure"`, `"volcengine"`, `"vikingdb"`, `"jina"`, `"ollama"`, `"gemini"`, `"voyage"`, `"dashscope"`, `"minimax"`, `"cohere"`, `"litellm"`, or `"local"` |
 | `api_key` | str | API key |
@@ -1005,6 +1007,24 @@ Grep engine configuration for content pattern search. These settings are server-
 | `switch_to_remote_threshold` | int | L2 record count threshold to switch to VikingDB BM25 recall. When the number of L2 files under the search scope reaches this threshold, VikingDB BM25 is used for phase-1 recall; otherwise local filesystem search is used. Set to `0` to always use VikingDB BM25. Must be ≥ 0. | `10000` |
 
 For VikingDB / Volcengine FullText grep, OpenViking writes a `content` text field for BM25 recall. The source context keeps the full content, while the vector-store write payload truncates this field to **1 MB** at the final adapter boundary to stay within backend payload limits. Only VikingDB-backed backends use `content`; on all other backends (`local`, `cuvs`, `http`) the field is not written.
+
+### glob
+
+Glob engine configuration for path pattern matching. These settings are server-side only and cannot be overridden per request.
+
+```json
+{
+  "glob": {
+    "engine": "fs",
+    "switch_to_remote_threshold": 100
+  }
+}
+```
+
+| Parameter | Type | Description | Default |
+|-----------|------|-------------|---------|
+| `engine` | str | Path matching engine mode: `"auto"` uses remote `path_glob` processing when a VikingDB / Volcengine vector store is available and the search-scope record count reaches the threshold; otherwise it falls back to local filesystem search. `"fs"` forces local filesystem search only. | `"fs"` |
+| `switch_to_remote_threshold` | int | Record-count threshold at which `auto` mode switches to remote `path_glob`. Set to `0` to always use remote path matching. Must be ≥ 0. | `100` |
 
 ### storage
 

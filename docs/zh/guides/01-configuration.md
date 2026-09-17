@@ -119,12 +119,14 @@ openviking-server doctor
   },
   "vlm": {
     "provider" : "openai-codex",
-    "model"    : "gpt-5.4",
+    "model"    : "gpt-5.6-terra",
     "api_base" : "https://chatgpt.com/backend-api/codex",
     "reasoning_effort": "xhigh"
   }
 }
 ```
+
+OpenAI 已于 2026 年 8 月 31 日[停止在 ChatGPT 登录的 Codex 中提供 `gpt-5.4`](https://learn.chatgpt.com/docs/models#deprecated-codex-models)。已有配置需将 `ov.conf` 中的 `vlm.model` 改为 `gpt-5.6-terra` 并重启服务；升级 OpenViking 不会自动修改已保存的模型设置。此次退役不影响使用 API Key 的 `provider: "openai"`。
 
 </details>
 
@@ -215,7 +217,7 @@ openviking-server doctor
 |------|------|------|
 | `max_concurrent` | int | 最大并发 Embedding 请求数（`embedding.max_concurrent`，默认：`10`；必须 `>= 1`） |
 | `max_retries` | int | Embedding provider 瞬时错误的最大重试次数（`embedding.max_retries`，默认：`3`；`0` 表示禁用重试） |
-| `text_source` | str | 文本文件向量化时使用的文本来源。`content_only` 读取原文内容；`summary_first` 优先使用摘要，没有摘要时回退到原文；`summary_only` 只使用摘要。默认：`content_only` |
+| `text_source` | str | 文本文件向量化时使用的文本来源。`content_only` 读取原文内容；`summary_first` 优先使用摘要，没有摘要时回退到原文；`summary_only` 已弃用，作为 `summary_first` 的兼容别名；旧配置仍可加载，会记录警告并归一为 `summary_first`。默认：`content_only` |
 | `max_input_tokens` | int | 使用原文内容向量化时，发送给 embedding 模型的最大估算 token 数。默认：`4096` |
 | `provider` | str | `"openai"`、`"azure"`、`"volcengine"`、`"vikingdb"`、`"jina"`、`"ollama"`、`"gemini"`、`"voyage"`、`"dashscope"`、`"minimax"`、`"cohere"`、`"litellm"` 或 `"local"` |
 | `api_key` | str | API Key |
@@ -973,6 +975,24 @@ Grep 引擎配置，用于内容模式搜索。这些设置为服务端配置，
 | `switch_to_remote_threshold` | int | 切换到 VikingDB BM25 召回的 L2 记录数阈值。当搜索范围内的 L2 文件数达到此阈值时，使用 VikingDB BM25 进行第一阶段召回；否则使用本地文件系统搜索。设为 `0` 表示始终使用 VikingDB BM25。必须 ≥ 0。 | `10000` |
 
 对于 VikingDB / Volcengine FullText grep，OpenViking 会写入 `content` text 字段用于 BM25 召回。源上下文中保留完整内容，仅在最终写入向量库 adapter payload 时将该字段截断到 **1 MB**，以满足后端 payload 限制。只有 VikingDB 系后端使用 `content`；其它后端（`local`、`cuvs`、`http`）不写入该字段。
+
+### glob
+
+Glob 引擎配置，用于路径模式匹配。这些设置为服务端配置，不支持请求级别覆盖。
+
+```json
+{
+  "glob": {
+    "engine": "fs",
+    "switch_to_remote_threshold": 100
+  }
+}
+```
+
+| 参数 | 类型 | 说明 | 默认值 |
+|------|------|------|--------|
+| `engine` | str | 路径匹配引擎模式：`"auto"` 在 VikingDB / Volcengine 向量库可用且搜索范围记录数达到阈值时，使用远程 `path_glob` 后处理；不可用或失败时回退到本地文件系统搜索。`"fs"` 强制仅使用本地文件系统搜索。 | `"fs"` |
+| `switch_to_remote_threshold` | int | `auto` 模式切换到远程 `path_glob` 的记录数阈值。当搜索范围内记录数达到此阈值时使用远程路径匹配。设为 `0` 表示始终使用远程路径匹配。必须 ≥ 0。 | `100` |
 
 ### storage
 

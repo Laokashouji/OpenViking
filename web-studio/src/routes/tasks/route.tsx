@@ -1,6 +1,6 @@
 import * as React from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import {
   CheckCircle2Icon,
   CheckIcon,
@@ -53,6 +53,7 @@ import { normalizeTaskStatus } from '#/routes/tasks/-lib/task-record'
 import type { TaskRecord } from '#/routes/tasks/-lib/task-record'
 import { formatTaskDuration, getTaskDate } from '#/routes/tasks/-lib/task-time'
 import { fetchTasks, fetchTaskSummary, MAX_TASKS } from './-lib/task-list'
+import { localizeSkippedCommit } from './-lib/localize-commit-result'
 import type { TaskStatusFilter, TaskTypeFilter } from './-lib/task-list'
 import { getTaskPipelineGroups } from './-lib/task-pipeline'
 
@@ -63,6 +64,7 @@ export const Route = createFileRoute('/tasks')({
 const DEFAULT_PAGE_SIZE = 20
 const PAGE_SIZE_OPTIONS = [20, 50, 100] as const
 const TASK_TYPE_OPTIONS: Exclude<TaskTypeFilter, 'all'>[] = [
+  'compile',
   'session_commit',
   'add_resource',
   'add_skill',
@@ -82,6 +84,7 @@ const TASK_STATUS_OPTIONS: Exclude<TaskStatusFilter, 'all'>[] = [
 ]
 
 function TasksRoute() {
+  const navigate = useNavigate()
   const { i18n, t } = useTranslation('tasksPage')
   const { identityScopeKey } = useAppConnection()
   const queryClient = useQueryClient()
@@ -110,7 +113,7 @@ function TasksRoute() {
     if (!dedupByResource) return rawTasks
     const map = new Map<string, TaskRecord>()
     for (const t of rawTasks) {
-      const key = t.resource_id ? `res:${t.resource_id}` : `task:${t.task_id}`
+      const key = t.resource_id && t.task_type !== 'compile' ? `res:${t.resource_id}` : `task:${t.task_id}`
       if (!map.has(key)) {
         map.set(key, t)
       }
@@ -139,13 +142,8 @@ function TasksRoute() {
       // ── 1. task_type 精确匹配优先（不受 URI 前缀干扰）──────────────────────
       if (task.task_type === 'session_commit') {
         const res = await commitSession(task.resource_id)
-        const resAny = res as any
-        if (resAny?.result?.reason === 'no_messages' || resAny?.reason === 'no_messages') {
-          toast.info(
-            i18n.language.startsWith('zh')
-              ? '该会话无未提交消息，已无需重复入队'
-              : 'Session has no pending uncommitted messages',
-          )
+        if (res.status === 'skipped' || res.reason === 'no_messages') {
+          return { res, task, skippedReason: res.reason ?? 'skipped' }
         }
         return { res, task }
       }
@@ -201,7 +199,11 @@ function TasksRoute() {
     onError: (error) => {
       toast.error(error instanceof Error ? error.message : String(error))
     },
-    onSuccess: async () => {
+    onSuccess: async (result) => {
+      if ('skippedReason' in result && result.skippedReason) {
+        toast.info(localizeSkippedCommit(result.skippedReason, t))
+        return
+      }
       toast.success(
         i18n.language.startsWith('zh')
           ? '重新入队请求已发送，后端正在处理新任务！'
@@ -312,7 +314,7 @@ function TasksRoute() {
             type="button"
             disabled={isRetrying}
             className="ml-1 inline-flex items-center justify-center rounded p-0.5 hover:bg-white/25 active:scale-95 transition-all cursor-pointer text-destructive-foreground disabled:opacity-50"
-            title={i18n.language.startsWith('zh') ? '重新发起任务' : 'Re-trigger Task'}
+            title={t('actions.retrigger')}
             onClick={(e) => {
               e.stopPropagation()
               retryMutation.mutate(task)
@@ -342,7 +344,7 @@ function TasksRoute() {
       | { type: 'serial'; step: StepItem }
       | { type: 'parallel'; steps: StepItem[] }
 
-    const groups = getTaskPipelineGroups(task, i18n.language)
+    const groups = getTaskPipelineGroups(task, t)
 
     return (
       <div className="flex items-center gap-1.5 overflow-x-auto py-0.5 min-w-[210px]">
@@ -866,7 +868,11 @@ function TasksRoute() {
                           'cursor-pointer outline-none hover:bg-muted/35 focus-visible:bg-muted/35 focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-inset',
                       )}
                       onClick={() => {
-                        if (taskId) setSelectedTaskId(taskId)
+                        if (taskId) {
+                          if (task.task_type === 'compile') {
+                            void navigate({ to: '/compile/tasks/$taskId', params: { taskId } })
+                          } else setSelectedTaskId(taskId)
+                        }
                       }}
                       onKeyDown={(event) => {
                         if (
@@ -874,7 +880,9 @@ function TasksRoute() {
                           (event.key === 'Enter' || event.key === ' ')
                         ) {
                           event.preventDefault()
-                          setSelectedTaskId(taskId)
+                          if (task.task_type === 'compile') {
+                            void navigate({ to: '/compile/tasks/$taskId', params: { taskId } })
+                          } else setSelectedTaskId(taskId)
                         }
                       }}
                     >
@@ -901,7 +909,7 @@ function TasksRoute() {
                       <TableCell>{renderQueuePipeline(task)}</TableCell>
                       <TableCell>{renderStatus(task)}</TableCell>
                       <TableCell className="whitespace-nowrap font-mono text-xs text-muted-foreground">
-                        {formatTaskDuration(task, i18n.language.startsWith('zh'))}
+                        {formatTaskDuration(task)}
                       </TableCell>
                       <TableCell className="whitespace-nowrap text-right text-muted-foreground">
                         {formatTime(task)}
